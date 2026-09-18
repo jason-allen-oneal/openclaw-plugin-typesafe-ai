@@ -1,4 +1,5 @@
 import type { ITypeSafeClient, InboundClaimEvent } from "./types.js";
+import { redactSensitiveText } from "./redactor.js";
 
 export interface TriageEvaluationResult {
   shouldSuppress: boolean;
@@ -22,13 +23,14 @@ export class GroupChatTriageService {
   }
 
   /**
-   * Safely formats and bounds inbound message content with boundary markers
-   * to protect against prompt injection and token-bombing attacks.
+   * Safely formats, bounds, and redacts inbound message content with boundary markers
+   * to protect against prompt injection, token-bombing, and secret leakage.
    */
   formatTriageState(channel: string, content: string): string {
-    let truncated = content;
-    if (content.length > 2500) {
-      truncated = `${content.slice(0, 1500)}\n... [truncated ${content.length - 2500} bytes] ...\n${content.slice(-1000)}`;
+    const sanitized = redactSensitiveText(content);
+    let truncated = sanitized;
+    if (sanitized.length > 2500) {
+      truncated = `${sanitized.slice(0, 1500)}\n... [truncated ${sanitized.length - 2500} bytes] ...\n${sanitized.slice(-1000)}`;
     }
 
     return [

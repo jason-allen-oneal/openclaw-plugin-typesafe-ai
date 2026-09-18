@@ -1,4 +1,5 @@
 import type { ITypeSafeClient } from "./types.js";
+import { redactSensitiveText } from "./redactor.js";
 
 export interface PruneStats {
   originalMessageCount: number;
@@ -77,11 +78,9 @@ export class CompactionCuratorService {
       await Promise.all(
         batch.map(async ({ record, content }) => {
           try {
+            const sanitizedSnippet = redactSensitiveText(content.slice(0, 800));
             const decision = await this.client.choice({
-              state: `Tool name: ${record.name ?? record.toolName ?? "tool"}\nOutput snippet:\n${content.slice(
-                0,
-                800,
-              )}`,
+              state: `Tool name: ${record.name ?? record.toolName ?? "tool"}\nOutput snippet:\n${sanitizedSnippet}`,
               options: ["ephemeral_log", "essential_state"],
             });
 

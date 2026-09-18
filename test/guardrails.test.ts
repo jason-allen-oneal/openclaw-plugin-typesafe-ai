@@ -21,11 +21,11 @@ describe("ToolGuardrailService", () => {
     expect(mockClient.score).not.toHaveBeenCalled();
   });
 
-  it("evaluates read_file when targeting sensitive files (.env, .ssh)", async () => {
+  it("halts locally with approval for sensitive targets (.env, .ssh) without remote egress", async () => {
     const mockClient: ITypeSafeClient = {
       noul: vi.fn(),
       choice: vi.fn(),
-      score: vi.fn().mockResolvedValue({ level: 4, confidence: 0.95 }),
+      score: vi.fn(),
     };
 
     const service = new ToolGuardrailService(mockClient);
@@ -36,15 +36,17 @@ describe("ToolGuardrailService", () => {
 
     const result = await service.assessToolCall(event);
     expect(result).not.toBeNull();
-    expect(mockClient.score).toHaveBeenCalledTimes(1);
-    expect(result?.requireApproval?.severity).toBe("warning");
+    // Zero egress: Jev remote call is skipped to protect credentials from leaving local host
+    expect(mockClient.score).not.toHaveBeenCalled();
+    expect(result?.requireApproval?.severity).toBe("critical");
+    expect(result?.requireApproval?.description).toContain("without transmitting sensitive payload off-box");
   });
 
-  it("evaluates read_url_content when targeting SSRF / cloud metadata IP", async () => {
+  it("halts locally with approval for SSRF metadata endpoints without remote egress", async () => {
     const mockClient: ITypeSafeClient = {
       noul: vi.fn(),
       choice: vi.fn(),
-      score: vi.fn().mockResolvedValue({ level: 5, confidence: 0.99 }),
+      score: vi.fn(),
     };
 
     const service = new ToolGuardrailService(mockClient);
@@ -55,7 +57,7 @@ describe("ToolGuardrailService", () => {
 
     const result = await service.assessToolCall(event);
     expect(result).not.toBeNull();
-    expect(mockClient.score).toHaveBeenCalledTimes(1);
+    expect(mockClient.score).not.toHaveBeenCalled();
     expect(result?.requireApproval?.severity).toBe("critical");
   });
 

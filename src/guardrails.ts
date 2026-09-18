@@ -4,6 +4,7 @@ import type {
   PluginHookBeforeToolCallResult,
 } from "./types.js";
 import { LruCache, computeDecisionHash, type CacheStats } from "./cache.js";
+import { redactSensitivePayload, redactSensitiveText } from "./redactor.js";
 
 export interface ToolGuardrailOptions {
   approvalLevel?: number;
@@ -144,11 +145,12 @@ export class ToolGuardrailService {
   }
 
   /**
-   * Encapsulates untrusted parameters in strict boundary markers and truncates
-   * to avoid prompt injection rubric mimicry and token bombing attacks.
+   * Encapsulates untrusted parameters in strict boundary markers, redacts sensitive credentials,
+   * and truncates to avoid prompt injection rubric mimicry and token bombing attacks.
    */
   formatEvaluationState(toolName: string, params: Record<string, unknown>): string {
-    const raw = JSON.stringify(params, null, 2);
+    const sanitizedParams = redactSensitivePayload(params);
+    const raw = redactSensitiveText(JSON.stringify(sanitizedParams, null, 2));
     // Truncate to maximum 3,000 characters (head 2000 + tail 1000)
     let truncated = raw;
     if (raw.length > 3000) {
@@ -171,11 +173,24 @@ export class ToolGuardrailService {
   async assessToolCall(
     event: BeforeToolCallEvent,
   ): Promise<PluginHookBeforeToolCallResult | null> {
-    const isInspection = SAFE_INSPECTION_TOOLS.has(event.toolName);
     const touchesSensitiveTarget = this.hasSensitiveTarget(event);
 
-    // Skip inspection tools ONLY if they do NOT target sensitive credentials/SSRF endpoints
-    if (isInspection && !touchesSensitiveTarget) {
+    // Privacy & Exfiltration Defense: If a command targets sensitive credential paths or private metadata/SSRF endpoints,
+    // halt execution LOCALLY immediately without transmitting the sensitive path or payload to any remote AI service!
+    if (touchesSensitiveTarget) {
+      return {
+        requireApproval: {
+          title: `TypeSafe Privacy & Security Guardrail: ${event.toolName}`,
+          description: `Sensitive credential path or private network target detected in arguments for '${event.toolName}'. Execution halted locally for operator confirmation without transmitting sensitive payload off-box.`,
+          severity: "critical",
+          allowedDecisions: ["allow-once", "deny"],
+        },
+      };
+    }
+
+    const isInspection = SAFE_INSPECTION_TOOLS.has(event.toolName);
+    // Skip harmless inspection tools immediately
+    if (isInspection) {
       return null;
     }
 
