@@ -2,8 +2,8 @@
   "id": "typesafe-ai",
   "name": "TypeSafe AI (Jev System One)",
   "version": "0.1.0",
-  "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, and model routing.",
-  "categories": ["security", "routing"],
+  "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, compaction curation, and model routing.",
+  "categories": ["security", "routing", "memory"],
   "activation": {
     "onStartup": true
   },
@@ -33,6 +33,14 @@
     "features.toolSafetyGate": {
       "label": "Tool Safety Guardrails",
       "help": "Use Jev Score to grade tool execution blast radius (1-5) and prompt for operator approval on critical operations."
+    },
+    "features.compactionCuration": {
+      "label": "Pre-Compaction Tool Log Pruning",
+      "help": "Use Jev Choice to prune ephemeral, high-volume tool execution dumps before sending transcripts to the LLM summarizer, reducing compaction cost and latency."
+    },
+    "features.compactionFidelityAudit": {
+      "label": "Compaction Fidelity Auditing",
+      "help": "Audit post-compaction session generation to track compaction metrics and prevent dropped task states."
     },
     "features.modelComplexityRouting": {
       "label": "Adaptive Model Complexity Routing",
@@ -99,6 +107,16 @@
             "type": "boolean",
             "default": true,
             "description": "Enable tool execution blast radius scoring"
+          },
+          "compactionCuration": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable pre-compaction tool output pruning"
+          },
+          "compactionFidelityAudit": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable post-compaction auditing"
           },
           "modelComplexityRouting": {
             "type": "boolean",

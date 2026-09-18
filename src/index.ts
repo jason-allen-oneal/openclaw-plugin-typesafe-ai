@@ -2,6 +2,7 @@ import { JevClientWrapper } from "./client.js";
 import { GroupChatTriageService } from "./triage.js";
 import { ToolGuardrailService } from "./guardrails.js";
 import { ModelComplexityRouter } from "./model-router.js";
+import { CompactionCuratorService } from "./compaction.js";
 import type {
   OpenClawPluginApi,
   TypeSafePluginConfig,
@@ -9,6 +10,9 @@ import type {
   BeforeToolCallEvent,
   BeforeModelResolveEvent,
   LlmInputEvent,
+  PluginHookBeforeCompactionEvent,
+  PluginHookAfterCompactionEvent,
+  PluginHookAgentContext,
 } from "./types.js";
 
 /**
@@ -34,6 +38,8 @@ export function register(api: OpenClawPluginApi): void {
   const enableSafety = features.toolSafetyGate !== false; // default true
   const enableRouting = features.modelComplexityRouting === true; // default false
   const enablePromptAudit = features.promptInjectionAudit === true; // default false
+  const enableCompaction = features.compactionCuration !== false; // default true
+  const enableCompactionAudit = features.compactionFidelityAudit !== false; // default true
 
   api.logger.info("[typesafe-ai] Initialized Jev System One decision engine.", {
     timeoutMs,
@@ -41,6 +47,8 @@ export function register(api: OpenClawPluginApi): void {
     enableSafety,
     enableRouting,
     enablePromptAudit,
+    enableCompaction,
+    enableCompactionAudit,
   });
 
   // 1. Group Chat Chatter Triage Hook
@@ -136,6 +144,48 @@ export function register(api: OpenClawPluginApi): void {
         api.logger.warn("[typesafe-ai] Prompt injection audit failed or timed out.", err);
       }
     });
+  }
+
+  // 5. Compaction Curation & Auditing Hooks
+  if (enableCompaction || enableCompactionAudit) {
+    const compactionService = new CompactionCuratorService(client);
+
+    // Pre-Compaction: Prune ephemeral tool results
+    if (enableCompaction) {
+      api.on(
+        "before_compaction",
+        async (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => {
+          try {
+            if (Array.isArray(event.messages) && event.messages.length > 0) {
+              const stats = await compactionService.pruneTranscriptMessages(event.messages);
+              if (stats.prunedOutputsCount > 0) {
+                api.logger.info(
+                  `[typesafe-ai] Pre-compaction pruned ${stats.prunedOutputsCount} transient tool outputs, saving ~${Math.round(
+                    stats.estimatedBytesSaved / 1024,
+                  )}KB before summarization.`,
+                  { sessionId: ctx?.sessionId },
+                );
+              }
+            }
+          } catch (err) {
+            api.logger.warn("[typesafe-ai] Pre-compaction curation failed or timed out.", err);
+          }
+        },
+      );
+    }
+
+    // Post-Compaction: Log metrics and audit completion
+    if (enableCompactionAudit) {
+      api.on(
+        "after_compaction",
+        async (event: PluginHookAfterCompactionEvent, ctx?: PluginHookAgentContext) => {
+          api.logger.debug(
+            `[typesafe-ai] Session compacted: ${event.compactedCount} messages condensed into updated session generation.`,
+            { sessionId: ctx?.sessionId, previousSessionId: event.previousSessionId },
+          );
+        },
+      );
+    }
   }
 }
 

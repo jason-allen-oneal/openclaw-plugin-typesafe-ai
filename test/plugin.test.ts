@@ -49,6 +49,8 @@ describe("TypeSafe AI Plugin Registration", () => {
     );
     expect(mockApi.on).toHaveBeenCalledWith("inbound_claim", expect.any(Function));
     expect(mockApi.on).toHaveBeenCalledWith("before_tool_call", expect.any(Function));
+    expect(mockApi.on).toHaveBeenCalledWith("before_compaction", expect.any(Function));
+    expect(mockApi.on).toHaveBeenCalledWith("after_compaction", expect.any(Function));
   });
 
   it("registers hooks when API key is present in plugin config", () => {

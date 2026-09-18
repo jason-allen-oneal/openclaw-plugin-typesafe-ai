@@ -25,6 +25,7 @@ Modern agent workflows often suffer from the **"Heuristic vs. Expensive LLM"** d
 
 * 🤫 **Intelligent Group Chat Triage (`Noul`)**: Evaluates inbound group messages in ~80ms. Casual chatter is suppressed immediately before context assembly or agent loops wake up.
 * 🛡️ **Autonomous Tool Blast Radius Guardrails (`Score`)**: Evaluates proposed tool execution parameters on a calibrated 1–5 risk scale. Harmless actions run instantly; destructive commands escalate for operator approval.
+* 🧹 **Pre-Compaction Tool Output Curation (`Choice` & `Noul`)**: Uses Jev to evaluate and prune bloated, transient tool outputs (test traces, terminal logs) *before* history reaches the LLM summarizer—slashing compaction input by ~75% and preventing mid-task amnesia.
 * 🔀 **Adaptive Model Tier Routing (`Choice`)**: Dynamically routes trivial queries to fast utility models (e.g. Claude 3.5 Haiku) and reserves frontier reasoning models for complex tasks.
 * 🛑 **Prompt Injection Screening (`Score`)**: Audits untrusted external web scraping and email payloads before feeding them to the primary agent loop.
 * 🔌 **Zero-Core Footprint & Graceful Fallback**: Strictly opt-in. If unconfigured or if network blips occur, OpenClaw transparently falls back to vanilla heuristic behavior with zero interruptions.

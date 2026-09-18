@@ -11,6 +11,8 @@ export interface TypeSafePluginConfig {
     toolSafetyGate?: boolean;
     modelComplexityRouting?: boolean;
     promptInjectionAudit?: boolean;
+    compactionCuration?: boolean;
+    compactionFidelityAudit?: boolean;
   };
 }
 
@@ -111,6 +113,30 @@ export interface LlmInputResult {
   warning?: string;
 }
 
+export interface PluginHookBeforeCompactionEvent {
+  messageCount: number;
+  compactingCount?: number;
+  tokenCount?: number;
+  messages?: unknown[];
+  sessionFile?: string;
+}
+
+export interface PluginHookAfterCompactionEvent {
+  messageCount: number;
+  tokenCount?: number;
+  compactedCount: number;
+  sessionFile?: string;
+  previousSessionId?: string;
+}
+
+export interface PluginHookAgentContext {
+  sessionId?: string;
+  agentId?: string;
+  sessionKey?: string;
+  workspaceDir?: string;
+  messageProvider?: string;
+}
+
 /**
  * OpenClaw Plugin API Facade.
  */
@@ -133,5 +159,7 @@ export interface OpenClawPluginApi {
   on(event: "before_tool_call", handler: (event: BeforeToolCallEvent) => Promise<PluginHookBeforeToolCallResult | void>): void;
   on(event: "before_model_resolve", handler: (event: BeforeModelResolveEvent) => Promise<BeforeModelResolveResult | void>): void;
   on(event: "llm_input", handler: (event: LlmInputEvent) => Promise<LlmInputResult | void>): void;
+  on(event: "before_compaction", handler: (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => Promise<void> | void): void;
+  on(event: "after_compaction", handler: (event: PluginHookAfterCompactionEvent, ctx?: PluginHookAgentContext) => Promise<void> | void): void;
   registerTool?(tool: unknown): void;
 }
