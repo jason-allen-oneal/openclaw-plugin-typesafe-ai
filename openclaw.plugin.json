@@ -1,7 +1,7 @@
 {
   "id": "typesafe-ai",
   "name": "TypeSafe AI (Jev System One)",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, compaction curation, and model routing.",
   "categories": ["agent-orchestration"],
   "activation": {
