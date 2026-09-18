@@ -7,6 +7,12 @@
     "extensions": [
       "./dist/index.js"
     ],
+    "contracts": {
+      "tools": [
+        "typesafe_evaluate",
+        "typesafe_jev"
+      ]
+    },
     "compat": {
       "pluginApi": ">=2026.9.4"
     },

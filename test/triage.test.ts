@@ -124,6 +124,63 @@ describe("GroupChatTriageService", () => {
     expect(mockClient.noul).not.toHaveBeenCalled();
   });
 
+  it("does not falsely exempt words like 'robot' or 'bottleneck' as bot name mentions", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.1, confidence: 0.9 }),
+      choice: vi.fn(),
+      score: vi.fn(),
+    };
+
+    const service = new GroupChatTriageService(mockClient, 0.75, ["bot"]);
+    const event = {
+      content: "we are attending a robotics conference this weekend",
+      channel: "discord",
+      isGroup: true,
+    };
+
+    const result = await service.evaluateGroupMessage(event);
+    // Should NOT be exempted by 'bot_name_mention'; should evaluate and suppress chatter
+    expect(result.shouldSuppress).toBe(true);
+    expect(mockClient.noul).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles events with body when content is absent", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.05, confidence: 0.95 }),
+      choice: vi.fn(),
+      score: vi.fn(),
+    };
+
+    const service = new GroupChatTriageService(mockClient, 0.75);
+    const event = {
+      body: "anyone watching the game tonight?",
+      channel: "slack",
+      isGroup: true,
+    };
+
+    const result = await service.evaluateGroupMessage(event);
+    expect(result.shouldSuppress).toBe(true);
+    expect(mockClient.noul).toHaveBeenCalledTimes(1);
+  });
+
+  it("evaluates message when isGroup is undefined rather than skipping as direct message", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.15, confidence: 0.85 }),
+      choice: vi.fn(),
+      score: vi.fn(),
+    };
+
+    const service = new GroupChatTriageService(mockClient, 0.75);
+    const event = {
+      content: "just checking in on the group channel",
+      channel: "general",
+    };
+
+    const result = await service.evaluateGroupMessage(event);
+    expect(result.shouldSuppress).toBe(true);
+    expect(mockClient.noul).toHaveBeenCalledTimes(1);
+  });
+
   it("truncates massive messages and encapsulates in boundary markers", async () => {
     const mockClient: ITypeSafeClient = {
       noul: vi.fn().mockResolvedValue({ value: false, probability: 0.85 }),

@@ -7,6 +7,14 @@ export interface TriageEvaluationResult {
   reason?: string;
 }
 
+export interface TriageInboundMessageEvent {
+  content?: string;
+  body?: string;
+  channel?: string;
+  conversationId?: string;
+  isGroup?: boolean;
+}
+
 export class GroupChatTriageService {
   private client: ITypeSafeClient;
   private threshold: number;
@@ -47,15 +55,15 @@ export class GroupChatTriageService {
    * Evaluates whether an inbound group chat message should be suppressed as background chatter.
    */
   async evaluateGroupMessage(
-    event: InboundClaimEvent,
+    event: TriageInboundMessageEvent,
     overrideBotNames?: string[],
   ): Promise<TriageEvaluationResult> {
-    // 1. Never suppress direct 1:1 messages
-    if (!event.isGroup) {
+    // 1. Never suppress direct 1:1 messages (explicitly marked isGroup === false)
+    if (event.isGroup === false) {
       return { shouldSuppress: false, confidence: 1.0, reason: "direct_message" };
     }
 
-    const text = (event.content || "").trim();
+    const text = (event.content || event.body || "").trim();
     if (!text) {
       return { shouldSuppress: false, confidence: 1.0, reason: "empty_content" };
     }
@@ -65,18 +73,22 @@ export class GroupChatTriageService {
       return { shouldSuppress: false, confidence: 1.0, reason: "explicit_command" };
     }
 
-    // 3. Never suppress explicit mentions of configured bot names
+    // 3. Never suppress explicit mentions of configured bot names (using word boundaries)
     const namesToCheck = overrideBotNames || this.configuredBotNames;
     const lower = text.toLowerCase();
     for (const name of namesToCheck) {
-      if (name && lower.includes(name.toLowerCase())) {
+      if (!name) continue;
+      const escaped = name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(`(^|\\W)@?${escaped}(\\W|$)`, "i");
+      if (regex.test(lower)) {
         return { shouldSuppress: false, confidence: 1.0, reason: "bot_name_mention" };
       }
     }
 
     // 4. Jev System One Noul Evaluation with safe boundary formatting
+    const channelName = event.channel || "group";
     const response = await this.client.noul({
-      state: this.formatTriageState(event.channel, text),
+      state: this.formatTriageState(channelName, text),
       proposition:
         "The message is asking a question or requesting action, input, or assistance from the AI assistant.",
     });

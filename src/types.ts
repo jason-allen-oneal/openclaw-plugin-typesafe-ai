@@ -127,6 +127,27 @@ export interface LlmInputResult {
   warning?: string;
 }
 
+export interface PluginHookBeforeDispatchEvent {
+  messageId?: string;
+  content?: string;
+  body?: string;
+  channel?: string;
+  sessionKey?: string;
+  senderId?: string;
+  replyToId?: string;
+  replyToIdFull?: string;
+  replyToBody?: string;
+  replyToSender?: string;
+  replyToIsQuote?: boolean;
+  isGroup?: boolean;
+  timestamp?: number;
+}
+
+export interface PluginHookBeforeDispatchResult {
+  handled: boolean;
+  text?: string;
+}
+
 export interface PluginHookBeforeCompactionEvent {
   messageCount: number;
   compactingCount?: number;
@@ -140,6 +161,7 @@ export interface PluginHookAfterCompactionEvent {
   tokenCount?: number;
   compactedCount: number;
   sessionFile?: string;
+  summary?: string;
   previousSessionId?: string;
 }
 
@@ -161,6 +183,12 @@ export interface OpenClawPluginLogger {
   error(msg: string, ...args: unknown[]): void;
 }
 
+export interface OpenClawPluginToolOptions {
+  name?: string;
+  names?: string[];
+  optional?: boolean;
+}
+
 export interface OpenClawPluginApi {
   config: {
     plugins?: {
@@ -169,11 +197,12 @@ export interface OpenClawPluginApi {
     [key: string]: unknown;
   };
   logger: OpenClawPluginLogger;
+  on(event: "before_dispatch", handler: (event: PluginHookBeforeDispatchEvent) => Promise<PluginHookBeforeDispatchResult | void> | PluginHookBeforeDispatchResult | void): void;
   on(event: "inbound_claim", handler: (event: InboundClaimEvent) => Promise<InboundClaimResult | void>): void;
   on(event: "before_tool_call", handler: (event: BeforeToolCallEvent) => Promise<PluginHookBeforeToolCallResult | void>): void;
   on(event: "before_model_resolve", handler: (event: BeforeModelResolveEvent) => Promise<BeforeModelResolveResult | void>): void;
   on(event: "llm_input", handler: (event: LlmInputEvent) => Promise<LlmInputResult | void>): void;
   on(event: "before_compaction", handler: (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => Promise<void> | void): void;
   on(event: "after_compaction", handler: (event: PluginHookAfterCompactionEvent, ctx?: PluginHookAgentContext) => Promise<void> | void): void;
-  registerTool?(tool: unknown): void;
+  registerTool?(tool: unknown, opts?: OpenClawPluginToolOptions): void;
 }

@@ -15,6 +15,12 @@
       }
     ]
   },
+  "contracts": {
+    "tools": [
+      "typesafe_evaluate",
+      "typesafe_jev"
+    ]
+  },
   "uiHints": {
     "apiKey": {
       "label": "TypeSafe AI API Key",

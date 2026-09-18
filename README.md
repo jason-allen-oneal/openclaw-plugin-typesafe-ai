@@ -23,10 +23,12 @@ Modern agent workflows often suffer from the **"Heuristic vs. Expensive LLM"** d
 
 ## 🎯 Features
 
-* 🤫 **Intelligent Group Chat Triage (`Noul`)**: Evaluates inbound group messages in ~80ms. Casual chatter is suppressed immediately before context assembly or agent loops wake up.
+* 🤫 **Intelligent Group Chat Triage (`Noul`)**: Evaluates inbound group messages in `before_dispatch` in ~80ms. Casual chatter is suppressed immediately before context assembly or agent loops wake up.
 * 🛡️ **Autonomous Tool Blast Radius Guardrails (`Score`)**: Evaluates proposed tool execution parameters on a calibrated 1–5 risk scale. Harmless actions run instantly; destructive commands escalate for operator approval with fail-closed protection.
 * ⚡ **In-Memory LRU Decision Cache**: Deterministic SHA-256 fingerprinting caches tool safety ratings, delivering 0ms instant verdicts on repetitive commands (`git status`, `ls`, file reads).
 * 🧹 **Pre-Compaction Tool Output Curation (`Choice` & `Noul`)**: Concurrently prunes bloated, transient tool outputs (test traces, terminal logs) in parallel batches before history reaches the LLM summarizer—slashing compaction input by ~75% while preserving state.
+* 🔍 **Post-Compaction Fidelity Auditing (`Noul`)**: Audits the resulting compacted summary against original conversation goals to actively verify no critical tasks or user constraints were lost in compression.
+* 🧰 **Manual Agent Tools (`typesafe_evaluate`, `typesafe_jev`)**: Exposes direct, on-demand Jev System One evaluation tools to your agent. Even when all automated event hooks are disabled, the plugin remains active and provides explicit System One decision tools.
 * 🔌 **Outage-Proof Circuit Breaker**: Consecutive network failures trip a circuit breaker to immediately fail fast, eliminating latency stalls during downstream provider interruptions.
 * 🔀 **Adaptive Model Tier Routing (`Choice`)**: Dynamically routes trivial queries to fast utility models (e.g. Claude 3.5 Haiku) and reserves frontier reasoning models for complex tasks.
 * 🛑 **Prompt Injection Screening (`Score`)**: Audits untrusted external web scraping and email payloads before feeding them to the primary agent loop.
@@ -72,7 +74,7 @@ Or configure it in your `openclaw.json` (or Gateway settings):
         "enabled": true,
         "config": {
           "apiKey": "${TYPESAFE_API_KEY}",
-          "timeoutMs": 250,
+          "timeoutMs": 1500,
           "safetyFailMode": "secure",
           "cacheEnabled": true,
           "triageThreshold": 0.75,
@@ -98,7 +100,7 @@ Or configure it in your `openclaw.json` (or Gateway settings):
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `apiKey` | `string` | `process.env.TYPESAFE_API_KEY` | TypeSafe AI API key. |
-| `timeoutMs` | `number` | `250` | Maximum ms to wait for a Jev decision before falling back. |
+| `timeoutMs` | `number` | `1500` | Maximum ms to wait for a Jev decision before falling back. |
 | `safetyFailMode` | `string` | `"secure"` | Safety fallback: `"secure"` fails closed (requires operator approval for dangerous tools on error); `"permissive"` allows normal execution. |
 | `cacheEnabled` | `boolean` | `true` | In-memory LRU decision cache for deterministic tool safety ratings. |
 | `cacheTtlMs` | `number` | `900000` (15m) | Time-to-live for cached decisions in milliseconds. |
@@ -112,9 +114,20 @@ Or configure it in your `openclaw.json` (or Gateway settings):
 | `features.groupChatTriage` | `boolean` | `true` | Enable sub-100ms group chat triage via `Noul`. |
 | `features.toolSafetyGate` | `boolean` | `true` | Enable pre-flight blast radius tool checks via `Score`. |
 | `features.compactionCuration` | `boolean` | `true` | Enable pre-compaction tool output pruning via `Choice`. |
-| `features.compactionFidelityAudit` | `boolean` | `true` | Audit post-compaction session generation. |
+| `features.compactionFidelityAudit` | `boolean` | `true` | Audit post-compaction session generation against initial goals. |
 | `features.modelComplexityRouting` | `boolean` | `false` | Enable dynamic model tier selection via `Choice`. |
 | `features.promptInjectionAudit` | `boolean` | `false` | Enable prompt injection screening via `Score`. |
+
+---
+
+## 🧰 Manual Agent Tools
+
+The plugin registers two agent tools: `typesafe_evaluate` (and alias `typesafe_jev`). These tools allow the agent to run manual, on-demand Jev decisions even if all automatic hooks are turned off:
+
+- **`noul`**: Evaluate a binary proposition (`state`, `proposition`) returning `{ value: boolean, probability: number, confidence: number }`.
+- **`choice`**: Select among candidate options (`state`, `instructions`, `options`, `criteria`).
+- **`score`**: Grade state against a rubric (`state`, `instructions`, `rubric`).
+- **`systemOne`**: Execute a batch of typed questions across noul, choice, and score in parallel.
 
 ---
 
@@ -131,14 +144,14 @@ sequenceDiagram
     participant LLM as Frontier Model (System 2)
 
     User->>Gateway: Inbound message ("anyone want coffee?")
-    Gateway->>Plugin: Hook: inbound_claim
+    Gateway->>Plugin: Hook: before_dispatch
     Plugin->>Jev: noul("Requires assistant intervention?")
-    Jev-->>Plugin: { value: false, probability: 0.94 } (~85ms)
+    Jev-->>Plugin: { value: false, probability: 0.06 } (~85ms)
     Plugin-->>Gateway: { handled: true } (Suppress turn)
     Note over Gateway: Agent loop not invoked. Zero LLM tokens spent.
 
     User->>Gateway: Inbound message ("@claw deploy the branch")
-    Gateway->>Plugin: Hook: inbound_claim (Mentions bot -> bypass triage)
+    Gateway->>Plugin: Hook: before_dispatch (Mentions bot -> bypass triage)
     Gateway->>Agent: Run Agent Loop
     Agent->>LLM: Generate Plan
     LLM-->>Agent: Propose tool call: exec("rm -rf ./dist")

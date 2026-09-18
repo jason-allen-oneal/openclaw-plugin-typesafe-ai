@@ -1,11 +1,14 @@
+import fs from "node:fs";
 import { JevClientWrapper } from "./client.js";
 import { GroupChatTriageService } from "./triage.js";
 import { ToolGuardrailService, HIGH_RISK_TOOLS } from "./guardrails.js";
 import { ModelComplexityRouter } from "./model-router.js";
 import { CompactionCuratorService } from "./compaction.js";
+import { createTypeSafeEvaluateTool } from "./tool.js";
 import type {
   OpenClawPluginApi,
   TypeSafePluginConfig,
+  PluginHookBeforeDispatchEvent,
   InboundClaimEvent,
   BeforeToolCallEvent,
   BeforeModelResolveEvent,
@@ -14,6 +17,8 @@ import type {
   PluginHookAfterCompactionEvent,
   PluginHookAgentContext,
 } from "./types.js";
+
+export { createTypeSafeEvaluateTool } from "./tool.js";
 
 /**
  * OpenClaw Plugin Entry definition.
@@ -30,13 +35,25 @@ export function register(api: OpenClawPluginApi): void {
     return;
   }
 
-  const timeoutMs = pluginConfig.timeoutMs ?? 250;
+  const timeoutMs = pluginConfig.timeoutMs ?? 1500;
   const safetyFailMode = pluginConfig.safetyFailMode ?? "secure";
   const configuredBotNames = pluginConfig.botNames ?? ["assistant", "bot", "claw", "openclaw"];
   const client = new JevClientWrapper(apiKey, timeoutMs, {
     failureThreshold: pluginConfig.circuitBreakerFailureThreshold,
     resetTimeoutMs: pluginConfig.circuitBreakerResetTimeoutMs,
   });
+
+  // Expose manual Jev tools so agents can run on-demand System One evaluations
+  // even if all automated event hooks are turned off.
+  if (typeof api.registerTool === "function") {
+    api.registerTool(createTypeSafeEvaluateTool(client, "typesafe_evaluate"), {
+      name: "typesafe_evaluate",
+    });
+    api.registerTool(createTypeSafeEvaluateTool(client, "typesafe_jev"), {
+      name: "typesafe_jev",
+    });
+    api.logger.debug("[typesafe-ai] Registered manual agent tools: typesafe_evaluate, typesafe_jev");
+  }
 
   const features = pluginConfig.features ?? {};
   const enableTriage = features.groupChatTriage !== false; // default true
@@ -66,6 +83,24 @@ export function register(api: OpenClawPluginApi): void {
       configuredBotNames,
     );
 
+    // Primary inbound dispatch hook for standard OpenClaw channel dispatch
+    api.on("before_dispatch", async (event: PluginHookBeforeDispatchEvent) => {
+      try {
+        const result = await triageService.evaluateGroupMessage(event);
+        if (result.shouldSuppress) {
+          api.logger.debug(
+            `[typesafe-ai] Suppressed group chatter in ${event.channel ?? "group"} (${Math.round(
+              result.confidence * 100,
+            )}% confidence)`,
+          );
+          return { handled: true };
+        }
+      } catch (err) {
+        api.logger.warn("[typesafe-ai] Group triage failed or timed out, falling back to default.", err);
+      }
+    });
+
+    // Secondary hook for plugin-bound conversation ownership sessions
     api.on("inbound_claim", async (event: InboundClaimEvent) => {
       try {
         const result = await triageService.evaluateGroupMessage(event);
@@ -173,14 +208,44 @@ export function register(api: OpenClawPluginApi): void {
   // 5. Compaction Curation & Auditing Hooks
   if (enableCompaction || enableCompactionAudit) {
     const compactionService = new CompactionCuratorService(client);
+    const sessionGoalsCache = new Map<string, string>();
 
-    // Pre-Compaction: Prune ephemeral tool results
-    if (enableCompaction) {
-      api.on(
-        "before_compaction",
-        async (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => {
-          try {
-            if (Array.isArray(event.messages) && event.messages.length > 0) {
+    // Helper to extract goals and key commitments from messages before compaction
+    function extractGoalsSnippet(messages: unknown[]): string {
+      if (!Array.isArray(messages) || messages.length === 0) return "";
+      const userSnippets: string[] = [];
+      for (const item of messages) {
+        if (!item || typeof item !== "object") continue;
+        const record = item as Record<string, unknown>;
+        if (record.role === "user" && typeof record.content === "string") {
+          userSnippets.push(record.content);
+        }
+      }
+      return userSnippets.slice(0, 5).join("\n---\n");
+    }
+
+    // Pre-Compaction: Prune ephemeral tool results and record original goals
+    api.on(
+      "before_compaction",
+      async (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => {
+        try {
+          const sessionKey = ctx?.sessionId ?? ctx?.sessionKey ?? event.sessionFile ?? "default";
+
+          if (Array.isArray(event.messages) && event.messages.length > 0) {
+            // Cache original goals snippet for post-compaction fidelity verification
+            if (enableCompactionAudit) {
+              const goalsSnippet = extractGoalsSnippet(event.messages);
+              if (goalsSnippet) {
+                if (sessionGoalsCache.size > 100) {
+                  const oldestKey = sessionGoalsCache.keys().next().value;
+                  if (oldestKey) sessionGoalsCache.delete(oldestKey);
+                }
+                sessionGoalsCache.set(sessionKey, goalsSnippet);
+              }
+            }
+
+            // Prune ephemeral logs
+            if (enableCompaction) {
               const concurrency = pluginConfig.compactionConcurrency ?? 5;
               const stats = await compactionService.pruneTranscriptMessages(
                 event.messages,
@@ -195,22 +260,74 @@ export function register(api: OpenClawPluginApi): void {
                 );
               }
             }
-          } catch (err) {
-            api.logger.warn("[typesafe-ai] Pre-compaction curation failed or timed out.", err);
           }
-        },
-      );
-    }
+        } catch (err) {
+          api.logger.warn("[typesafe-ai] Pre-compaction processing failed or timed out.", err);
+        }
+      },
+    );
 
-    // Post-Compaction: Log metrics and audit completion
+    // Post-Compaction: Audit summary fidelity
     if (enableCompactionAudit) {
       api.on(
         "after_compaction",
         async (event: PluginHookAfterCompactionEvent, ctx?: PluginHookAgentContext) => {
-          api.logger.debug(
-            `[typesafe-ai] Session compacted: ${event.compactedCount} messages condensed into updated session generation.`,
-            { sessionId: ctx?.sessionId, previousSessionId: event.previousSessionId },
-          );
+          try {
+            const sessionKey = ctx?.sessionId ?? ctx?.sessionKey ?? event.sessionFile ?? "default";
+            const originalGoals = sessionGoalsCache.get(sessionKey);
+            if (originalGoals) {
+              sessionGoalsCache.delete(sessionKey);
+            }
+
+            // Retrieve compacted summary from event or transcript sessionFile
+            let summary = event.summary;
+            if (!summary && event.sessionFile) {
+              try {
+                const fileContent = await fs.promises.readFile(event.sessionFile, "utf-8");
+                const lines = fileContent.trim().split("\n");
+                for (let i = lines.length - 1; i >= 0; i--) {
+                  const line = lines[i].trim();
+                  if (!line) continue;
+                  try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.summary && typeof parsed.summary === "string") {
+                      summary = parsed.summary;
+                      break;
+                    }
+                  } catch {}
+                }
+              } catch {
+                // Ignore file read error, proceed with fallback
+              }
+            }
+
+            if (originalGoals && summary) {
+              const audit = await compactionService.auditSummaryFidelity(originalGoals, summary);
+              if (!audit.preserved) {
+                api.logger.warn(
+                  `[typesafe-ai] Post-compaction fidelity warning: ${audit.warning}`,
+                  {
+                    sessionId: ctx?.sessionId,
+                    confidence: audit.confidence,
+                  },
+                );
+              } else {
+                api.logger.info(
+                  `[typesafe-ai] Post-compaction fidelity audit passed (${Math.round(
+                    audit.confidence * 100,
+                  )}% confidence).`,
+                  { sessionId: ctx?.sessionId },
+                );
+              }
+            } else {
+              api.logger.debug(
+                `[typesafe-ai] Session compacted: ${event.compactedCount} messages condensed into updated session generation.`,
+                { sessionId: ctx?.sessionId, previousSessionId: event.previousSessionId },
+              );
+            }
+          } catch (err) {
+            api.logger.warn("[typesafe-ai] Post-compaction fidelity audit failed or timed out.", err);
+          }
         },
       );
     }
