@@ -1,6 +1,6 @@
 import { JevClientWrapper } from "./client.js";
 import { GroupChatTriageService } from "./triage.js";
-import { ToolGuardrailService } from "./guardrails.js";
+import { ToolGuardrailService, HIGH_RISK_TOOLS } from "./guardrails.js";
 import { ModelComplexityRouter } from "./model-router.js";
 import { CompactionCuratorService } from "./compaction.js";
 import type {
@@ -31,6 +31,8 @@ export function register(api: OpenClawPluginApi): void {
   }
 
   const timeoutMs = pluginConfig.timeoutMs ?? 250;
+  const safetyFailMode = pluginConfig.safetyFailMode ?? "secure";
+  const configuredBotNames = pluginConfig.botNames ?? ["assistant", "bot", "claw", "openclaw"];
   const client = new JevClientWrapper(apiKey, timeoutMs);
 
   const features = pluginConfig.features ?? {};
@@ -43,6 +45,7 @@ export function register(api: OpenClawPluginApi): void {
 
   api.logger.info("[typesafe-ai] Initialized Jev System One decision engine.", {
     timeoutMs,
+    safetyFailMode,
     enableTriage,
     enableSafety,
     enableRouting,
@@ -53,7 +56,11 @@ export function register(api: OpenClawPluginApi): void {
 
   // 1. Group Chat Chatter Triage Hook
   if (enableTriage) {
-    const triageService = new GroupChatTriageService(client, pluginConfig.triageThreshold ?? 0.75);
+    const triageService = new GroupChatTriageService(
+      client,
+      pluginConfig.triageThreshold ?? 0.75,
+      configuredBotNames,
+    );
 
     api.on("inbound_claim", async (event: InboundClaimEvent) => {
       try {
@@ -89,6 +96,16 @@ export function register(api: OpenClawPluginApi): void {
           return approval;
         }
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        // Security: In secure mode, high-risk tools fail closed (require interactive confirmation)
+        if (safetyFailMode === "secure" && HIGH_RISK_TOOLS.has(event.toolName)) {
+          api.logger.warn(
+            `[typesafe-ai] Security check failed or timed out for high-risk tool '${event.toolName}'. Failing closed: requiring interactive approval.`,
+            err,
+          );
+          return guardrailService.createFailClosedApproval(event.toolName, event.params, errMsg);
+        }
+
         api.logger.warn("[typesafe-ai] Tool safety check failed or timed out, allowing default policy.", err);
       }
     });

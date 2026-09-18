@@ -1,7 +1,7 @@
 {
   "id": "typesafe-ai",
   "name": "TypeSafe AI (Jev System One)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, compaction curation, and model routing.",
   "categories": ["agent-orchestration"],
   "activation": {
@@ -25,6 +25,14 @@
     "timeoutMs": {
       "label": "Timeout (ms)",
       "help": "Maximum milliseconds to wait for a Jev decision before falling back to heuristics (default: 250ms)."
+    },
+    "safetyFailMode": {
+      "label": "Safety Fallback Posture",
+      "help": "Fail mode when Jev times out on dangerous tools. 'secure' requires interactive approval for critical tools (exec, rm, spawn); 'permissive' allows standard execution."
+    },
+    "botNames": {
+      "label": "Bot Name Aliases",
+      "help": "Names or aliases of the bot to always exempt from group triage (e.g. ['assistant', 'jarvis', 'claw'])."
     },
     "features.groupChatTriage": {
       "label": "Group Chat Chatter Triage",
@@ -93,6 +101,17 @@
         "type": "number",
         "default": 4,
         "description": "Risk score level (1 - 5) at or above which interactive approval is required"
+      },
+      "safetyFailMode": {
+        "type": "string",
+        "enum": ["secure", "permissive"],
+        "default": "secure",
+        "description": "Fallback posture when Jev check fails or times out on high-risk tools"
+      },
+      "botNames": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Bot aliases to exempt from triage"
       },
       "features": {
         "type": "object",

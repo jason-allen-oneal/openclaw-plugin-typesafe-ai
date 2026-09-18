@@ -75,4 +75,36 @@ describe("TypeSafe AI Plugin Registration", () => {
     expect(mockApi.on).toHaveBeenCalledWith("before_tool_call", expect.any(Function));
     expect(mockApi.on).toHaveBeenCalledWith("before_model_resolve", expect.any(Function));
   });
+
+  it("fails closed on high-risk tool when safety check encounters an error in secure mode", async () => {
+    mockApi.config.plugins = {
+      entries: {
+        "typesafe-ai": {
+          config: {
+            apiKey: "ts_live_from_config",
+            safetyFailMode: "secure",
+          },
+        },
+      },
+    };
+
+    register(mockApi);
+
+    const beforeToolCallHandler = registeredHooks["before_tool_call"];
+    expect(beforeToolCallHandler).toBeDefined();
+
+    // Invoking with exec which will fail inside Jev
+    const result = await beforeToolCallHandler({
+      toolName: "exec",
+      params: { command: "dangerous script" },
+    });
+
+    expect(result).toBeDefined();
+    expect(result.requireApproval).toBeDefined();
+    expect(result.requireApproval.severity).toBe("critical");
+    expect(mockApi.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Security check failed or timed out for high-risk tool 'exec'"),
+      expect.anything(),
+    );
+  });
 });

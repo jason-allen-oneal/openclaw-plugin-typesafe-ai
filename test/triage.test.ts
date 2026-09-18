@@ -103,4 +103,41 @@ describe("GroupChatTriageService", () => {
     expect(result.shouldSuppress).toBe(false);
     expect(mockClient.noul).toHaveBeenCalledTimes(1);
   });
+
+  it("exempts custom configured bot names from triage", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn(),
+      choice: vi.fn(),
+      score: vi.fn(),
+    };
+
+    const service = new GroupChatTriageService(mockClient, 0.75, ["jarvis", "friday"]);
+    const event: InboundClaimEvent = {
+      content: "hey jarvis, what is the weather?",
+      channel: "discord",
+      conversationId: "channel_general",
+      isGroup: true,
+    };
+
+    const result = await service.evaluateGroupMessage(event);
+    expect(result.shouldSuppress).toBe(false);
+    expect(mockClient.noul).not.toHaveBeenCalled();
+  });
+
+  it("truncates massive messages and encapsulates in boundary markers", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.85 }),
+      choice: vi.fn(),
+      score: vi.fn(),
+    };
+
+    const service = new GroupChatTriageService(mockClient);
+    const massiveText = "hello ".repeat(1000); // 6000 chars
+    const state = service.formatTriageState("general", massiveText);
+
+    expect(state).toContain("--- BEGIN UNTRUSTED INBOUND USER MESSAGE ---");
+    expect(state).toContain("--- END UNTRUSTED INBOUND USER MESSAGE ---");
+    expect(state).toContain("[truncated");
+    expect(state.length).toBeLessThan(3500);
+  });
 });

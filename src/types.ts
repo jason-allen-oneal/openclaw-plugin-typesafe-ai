@@ -6,6 +6,8 @@ export interface TypeSafePluginConfig {
   timeoutMs?: number;
   triageThreshold?: number;
   safetyApprovalLevel?: number;
+  safetyFailMode?: "secure" | "permissive";
+  botNames?: string[];
   features?: {
     groupChatTriage?: boolean;
     toolSafetyGate?: boolean;
