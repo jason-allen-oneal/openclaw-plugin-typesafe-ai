@@ -34,7 +34,15 @@
     "guardrails",
     "triage"
   ],
-  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jason-allen-oneal/openclaw-plugin-typesafe-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jason-allen-oneal/openclaw-plugin-typesafe-ai/issues"
+  },
+  "homepage": "https://github.com/jason-allen-oneal/openclaw-plugin-typesafe-ai#readme",
+  "author": "Jason Allen O'Neal",
   "license": "MIT",
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0"
