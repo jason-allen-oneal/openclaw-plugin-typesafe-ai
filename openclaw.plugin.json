@@ -1,0 +1,117 @@
+{
+  "id": "typesafe-ai",
+  "name": "TypeSafe AI (Jev System One)",
+  "version": "0.1.0",
+  "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, and model routing.",
+  "categories": ["security", "routing"],
+  "activation": {
+    "onStartup": true
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "typesafe",
+        "envVars": ["TYPESAFE_API_KEY"]
+      }
+    ]
+  },
+  "uiHints": {
+    "apiKey": {
+      "label": "TypeSafe AI API Key",
+      "help": "API key from typesafe.ai for accessing the Jev model.",
+      "sensitive": true,
+      "placeholder": "ts_live_..."
+    },
+    "timeoutMs": {
+      "label": "Timeout (ms)",
+      "help": "Maximum milliseconds to wait for a Jev decision before falling back to heuristics (default: 250ms)."
+    },
+    "features.groupChatTriage": {
+      "label": "Group Chat Chatter Triage",
+      "help": "Use Jev Noul to evaluate whether group chat messages need the assistant, suppressing casual chatter without agent invocations."
+    },
+    "features.toolSafetyGate": {
+      "label": "Tool Safety Guardrails",
+      "help": "Use Jev Score to grade tool execution blast radius (1-5) and prompt for operator approval on critical operations."
+    },
+    "features.modelComplexityRouting": {
+      "label": "Adaptive Model Complexity Routing",
+      "help": "Use Jev Choice to classify prompt complexity and route between light utility models and frontier models."
+    },
+    "features.promptInjectionAudit": {
+      "label": "Prompt Injection Screening",
+      "help": "Score untrusted external web/email content for prompt injection before feeding it to the agent."
+    }
+  },
+  "configGroups": [
+    {
+      "id": "general",
+      "title": "General Settings",
+      "order": 1,
+      "properties": ["apiKey", "timeoutMs"]
+    },
+    {
+      "id": "features",
+      "title": "Decision Features",
+      "order": 2,
+      "properties": ["features"]
+    },
+    {
+      "id": "thresholds",
+      "title": "Decision Thresholds",
+      "order": 3,
+      "properties": ["triageThreshold", "safetyApprovalLevel"]
+    }
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiKey": {
+        "type": "string",
+        "description": "TypeSafe AI API key"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "default": 250,
+        "description": "Hard timeout in milliseconds before falling back"
+      },
+      "triageThreshold": {
+        "type": "number",
+        "default": 0.75,
+        "description": "Confidence threshold (0.0 - 1.0) required to suppress group chatter"
+      },
+      "safetyApprovalLevel": {
+        "type": "number",
+        "default": 4,
+        "description": "Risk score level (1 - 5) at or above which interactive approval is required"
+      },
+      "features": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "groupChatTriage": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable sub-100ms group chat triage"
+          },
+          "toolSafetyGate": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable tool execution blast radius scoring"
+          },
+          "modelComplexityRouting": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable adaptive model routing between utility and frontier tiers"
+          },
+          "promptInjectionAudit": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable prompt injection screening on external content"
+          }
+        }
+      }
+    }
+  }
+}
