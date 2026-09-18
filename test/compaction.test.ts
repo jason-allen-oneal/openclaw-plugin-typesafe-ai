@@ -91,7 +91,8 @@ describe("CompactionCuratorService", () => {
     const mockClient: ITypeSafeClient = {
       noul: vi.fn().mockResolvedValue({
         value: false,
-        probability: 0.85,
+        probability: 0.15,
+        confidence: 0.85,
       }),
       choice: vi.fn(),
       score: vi.fn(),

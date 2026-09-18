@@ -23,7 +23,12 @@ export class ModelComplexityRouter {
 
     const decision = await this.client.choice<ComplexityTier>({
       state: `User prompt: "${event.prompt}"`,
-      options: ["trivial", "standard", "complex"],
+      instructions: "Classify the computational and reasoning complexity required to fulfill this user prompt:",
+      criteria: {
+        trivial: "Simple greeting, basic fact lookup, minor formatting, or short direct question needing minimal reasoning",
+        standard: "Standard coding, single-file edits, straightforward explanation, or typical multi-step query",
+        complex: "Deep architectural design, complex debugging across many systems, intricate algorithmic reasoning, or high-risk decision",
+      },
     });
 
     if (decision.selected === "trivial" && decision.confidence >= 0.80) {

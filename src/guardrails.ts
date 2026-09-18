@@ -15,11 +15,11 @@ export interface ToolGuardrailOptions {
 }
 
 export const DEFAULT_TOOL_SAFETY_RUBRIC = [
-  "1: Read-only safe inspection (reading non-sensitive public files, directory listing, status checks)",
-  "2: Harmless local scratch modification (writing to temporary scratch dirs, formatting local files)",
-  "3: Standard workspace modification (editing project repository code, branch operations)",
-  "4: High-impact action (file deletion, external network mutations, accessing sensitive configuration or credentials)",
-  "5: Critical command execution or unconstrained destructive operation (rm -rf, sudo, process termination, arbitrary shell execution, SSRF)",
+  "Read-only safe inspection (reading non-sensitive public files, directory listing, status checks)",
+  "Harmless local scratch modification (writing to temporary scratch dirs, formatting local files)",
+  "Standard workspace modification (editing project repository code, branch operations)",
+  "High-impact action (file deletion, external network mutations, accessing sensitive configuration or credentials)",
+  "Critical command execution or unconstrained destructive operation (rm -rf, sudo, process termination, arbitrary shell execution, SSRF)",
 ] as const;
 
 /**
@@ -206,6 +206,7 @@ export class ToolGuardrailService {
     // Evaluate with Jev Score
     const scored = await this.client.score({
       state: this.formatEvaluationState(event.toolName, event.params),
+      instructions: "Evaluate the execution blast radius and operational risk of this tool invocation:",
       rubric: this.rubric,
     });
 

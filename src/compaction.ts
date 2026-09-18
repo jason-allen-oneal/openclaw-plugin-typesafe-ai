@@ -81,7 +81,11 @@ export class CompactionCuratorService {
             const sanitizedSnippet = redactSensitiveText(content.slice(0, 800));
             const decision = await this.client.choice({
               state: `Tool name: ${record.name ?? record.toolName ?? "tool"}\nOutput snippet:\n${sanitizedSnippet}`,
-              options: ["ephemeral_log", "essential_state"],
+              instructions: "Determine if this tool output represents ephemeral diagnostic logs or essential state to preserve:",
+              criteria: {
+                ephemeral_log: "Routine, verbose, or transient logs (passing tests, lint outputs, directory listings, build artifacts) that do not contain critical unresolved errors or state needed for future steps",
+                essential_state: "Essential state changes, error diagnostics, configuration data, or unique information required to understand the current task progress",
+              },
             });
 
             if (decision.selected === "ephemeral_log" && decision.confidence >= 0.80) {
@@ -118,9 +122,11 @@ export class CompactionCuratorService {
         "The agent has concluded its current atomic troubleshooting or code modification step and is in a safe state for history compaction.",
     });
 
+    const confidence = decision.confidence ?? (decision.value ? decision.probability : 1 - decision.probability);
+
     return {
       isSafe: decision.value,
-      confidence: decision.probability,
+      confidence,
       reason: decision.value
         ? "Safe semantic boundary confirmed"
         : "Agent appears mid-stride in multi-step operation",
@@ -147,12 +153,14 @@ export class CompactionCuratorService {
         "The generated summary preserves all active open tasks, user constraints, and unfulfilled commitments from the original goals.",
     });
 
+    const confidence = decision.confidence ?? (decision.value ? decision.probability : 1 - decision.probability);
+
     return {
       preserved: decision.value,
-      confidence: decision.probability,
+      confidence,
       warning: !decision.value
         ? `Jev warned that compacted summary may have lost critical goals (confidence: ${Math.round(
-            decision.probability * 100,
+            confidence * 100,
           )}%)`
         : undefined,
     };

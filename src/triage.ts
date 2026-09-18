@@ -81,18 +81,21 @@ export class GroupChatTriageService {
         "The message is asking a question or requesting action, input, or assistance from the AI assistant.",
     });
 
-    // If Jev evaluates false with high calibrated probability, suppress
-    if (!response.value && response.probability >= this.threshold) {
+    // In TypeSafe Noul, response.probability represents P(YES) - i.e. that the message is addressing the assistant.
+    // If response.value is false (P(YES) < 0.5), then P(NO) = 1 - P(YES) is the confidence that this is background chatter.
+    const notAddressingConfidence = response.confidence ?? (response.value ? response.probability : 1 - response.probability);
+
+    if (!response.value && notAddressingConfidence >= this.threshold) {
       return {
         shouldSuppress: true,
-        confidence: response.probability,
+        confidence: notAddressingConfidence,
         reason: "system_one_chatter_suppressed",
       };
     }
 
     return {
       shouldSuppress: false,
-      confidence: response.probability,
+      confidence: response.value ? response.probability : notAddressingConfidence,
       reason: "passed_triage",
     };
   }

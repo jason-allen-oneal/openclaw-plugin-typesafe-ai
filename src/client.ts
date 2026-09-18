@@ -47,7 +47,7 @@ export class JevClientWrapper implements ITypeSafeClient {
 
   constructor(
     apiKey: string,
-    timeoutMs = 250,
+    timeoutMs = 1500,
     circuitBreakerConfig: CircuitBreakerConfig = {},
   ) {
     this.timeoutMs = timeoutMs;
@@ -151,9 +151,11 @@ export class JevClientWrapper implements ITypeSafeClient {
       });
       const answer = result.answers.q;
       const prob = answer.noul;
+      const value = prob >= 0.5;
       return {
-        value: prob >= 0.5,
+        value,
         probability: prob,
+        confidence: value ? prob : 1 - prob,
       };
     });
   }
@@ -161,14 +163,20 @@ export class JevClientWrapper implements ITypeSafeClient {
   async choice<T extends string>(params: ChoiceRequest<T>): Promise<ChoiceResponse<T>> {
     return this.executeWithProtection("choice", async () => {
       const criteria: Record<string, string | null> = {};
-      for (const opt of params.options) {
-        criteria[opt] = null;
+      if (params.criteria) {
+        Object.assign(criteria, params.criteria);
+      } else if (params.options) {
+        for (const opt of params.options) {
+          criteria[opt] = null;
+        }
       }
+
+      const instructions = params.instructions ?? "Select the best matching option:";
 
       const result = await this.client.systemOne({
         state: params.state,
         questions: {
-          q: choice("Select the best matching option:", criteria),
+          q: choice(instructions, criteria),
         },
       });
       const answer = result.answers.q;
@@ -193,17 +201,33 @@ export class JevClientWrapper implements ITypeSafeClient {
         ...rubric.slice(2),
       ];
 
+      const instructions = params.instructions ?? "Evaluate state against the ordered rubric:";
+
       const result = await this.client.systemOne({
         state: params.state,
         questions: {
-          q: score("Evaluate state against the ordered rubric:", scoreCriteria),
+          q: score(instructions, scoreCriteria),
         },
       });
       const answer = result.answers.q;
+      // TypeSafe Score is 0-indexed across criteria levels (0 to criteria.length - 1).
+      // Map to 1-indexed risk scale (1 to N) consistent with 1-5 safety & injection ratings.
+      const level = Math.round(answer.score) + 1;
       return {
-        level: Math.round(answer.score),
+        level,
         confidence: answer.confidence,
+        rawScore: answer.score,
       };
+    });
+  }
+
+  async systemOne<Q extends Record<string, any>>(request: {
+    state: any;
+    questions: Q;
+    model?: string;
+  }): Promise<any> {
+    return this.executeWithProtection("systemOne", async () => {
+      return this.client.systemOne(request as any);
     });
   }
 }

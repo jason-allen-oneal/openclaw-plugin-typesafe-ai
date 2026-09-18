@@ -12,7 +12,7 @@ describe("JevClientWrapper Circuit Breaker", () => {
       model: "jev-1",
       latency_ms: 12,
       answers: {
-        q: { noul: 0.9, confidence: 0.95 },
+        q: { type: "noul", noul: 0.9 },
       },
     } as any);
 
@@ -85,7 +85,7 @@ describe("JevClientWrapper Circuit Breaker", () => {
       model: "jev-1",
       latency_ms: 10,
       answers: {
-        q: { noul: 0.85, confidence: 0.9 },
+        q: { type: "noul", noul: 0.85 },
       },
     } as any);
 

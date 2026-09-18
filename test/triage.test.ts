@@ -65,7 +65,7 @@ describe("GroupChatTriageService", () => {
 
   it("suppresses casual chatter when Jev evaluates false with high confidence", async () => {
     const mockClient: ITypeSafeClient = {
-      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.92 }),
+      noul: vi.fn().mockResolvedValue({ value: false, probability: 0.08, confidence: 0.92 }),
       choice: vi.fn(),
       score: vi.fn(),
     };

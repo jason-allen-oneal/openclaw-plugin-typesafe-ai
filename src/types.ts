@@ -35,11 +35,14 @@ export interface NoulRequest {
 export interface NoulResponse {
   value: boolean;
   probability: number;
+  confidence?: number;
 }
 
 export interface ChoiceRequest<T extends string = string> {
   state: string;
-  options: readonly T[];
+  instructions?: string;
+  options?: readonly T[];
+  criteria?: Record<T, string | null>;
 }
 
 export interface ChoiceResponse<T extends string = string> {
@@ -50,12 +53,14 @@ export interface ChoiceResponse<T extends string = string> {
 
 export interface ScoreRequest {
   state: string;
+  instructions?: string;
   rubric: readonly string[];
 }
 
 export interface ScoreResponse {
   level: number;
   confidence: number;
+  rawScore?: number;
   distribution?: Record<number, number>;
 }
 
@@ -63,6 +68,7 @@ export interface ITypeSafeClient {
   noul(params: NoulRequest): Promise<NoulResponse>;
   choice<T extends string>(params: ChoiceRequest<T>): Promise<ChoiceResponse<T>>;
   score(params: ScoreRequest): Promise<ScoreResponse>;
+  systemOne?<Q extends Record<string, any>>(request: { state: any; questions: Q; model?: string }): Promise<any>;
 }
 
 /**

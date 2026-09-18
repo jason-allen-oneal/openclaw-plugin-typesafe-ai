@@ -1,6 +1,6 @@
 {
   "name": "openclaw-plugin-typesafe-ai",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "TypeSafe AI (Jev System One) plugin for OpenClaw - sub-100ms typed group triage, tool safety guardrails, and model routing.",
   "type": "module",
   "openclaw": {
