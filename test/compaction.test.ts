@@ -108,4 +108,73 @@ describe("CompactionCuratorService", () => {
     expect(audit.warning).toContain("Jev warned");
     expect(mockClient.noul).toHaveBeenCalledTimes(1);
   });
+
+  it("prunes messages in concurrent batches according to concurrency limit", async () => {
+    let activeConcurrentCalls = 0;
+    let maxObservedConcurrent = 0;
+
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn(),
+      choice: vi.fn().mockImplementation(async () => {
+        activeConcurrentCalls++;
+        if (activeConcurrentCalls > maxObservedConcurrent) {
+          maxObservedConcurrent = activeConcurrentCalls;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        activeConcurrentCalls--;
+        return {
+          selected: "ephemeral_log",
+          confidence: 0.95,
+        };
+      }),
+      score: vi.fn(),
+    };
+
+    const service = new CompactionCuratorService(mockClient);
+    const messages = Array.from({ length: 9 }, (_, i) => ({
+      role: "tool",
+      toolName: `tool_${i}`,
+      content: "PASS test output line\n".repeat(30),
+    }));
+
+    const stats = await service.pruneTranscriptMessages(messages, 3);
+    expect(stats.prunedOutputsCount).toBe(9);
+    expect(mockClient.choice).toHaveBeenCalledTimes(9);
+    // Concurrency must never exceed 3
+    expect(maxObservedConcurrent).toBeLessThanOrEqual(3);
+    expect(maxObservedConcurrent).toBeGreaterThanOrEqual(2);
+  });
+
+  it("resiliently processes batch even when some calls fail", async () => {
+    let callCount = 0;
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn(),
+      choice: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 2) {
+          throw new Error("Jev timeout on item 2");
+        }
+        return {
+          selected: "ephemeral_log",
+          confidence: 0.90,
+        };
+      }),
+      score: vi.fn(),
+    };
+
+    const service = new CompactionCuratorService(mockClient);
+    const messages = [
+      { role: "tool", toolName: "t1", content: "PASS test file output line\n".repeat(25) },
+      { role: "tool", toolName: "t2", content: "PASS test file output line\n".repeat(25) },
+      { role: "tool", toolName: "t3", content: "PASS test file output line\n".repeat(25) },
+    ];
+
+    const stats = await service.pruneTranscriptMessages(messages, 3);
+    expect(stats.prunedOutputsCount).toBe(2);
+    // Item 1 and 3 pruned, item 2 preserved intact
+    expect(messages[0].content).toContain("[Omitted by TypeSafe Compaction Curator");
+    expect(messages[1].content).not.toContain("[Omitted by TypeSafe Compaction Curator");
+    expect(messages[2].content).toContain("[Omitted by TypeSafe Compaction Curator");
+  });
 });
+

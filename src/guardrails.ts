@@ -3,6 +3,15 @@ import type {
   BeforeToolCallEvent,
   PluginHookBeforeToolCallResult,
 } from "./types.js";
+import { LruCache, computeDecisionHash, type CacheStats } from "./cache.js";
+
+export interface ToolGuardrailOptions {
+  approvalLevel?: number;
+  rubric?: readonly string[];
+  cacheEnabled?: boolean;
+  cacheTtlMs?: number;
+  cacheMaxEntries?: number;
+}
 
 export const DEFAULT_TOOL_SAFETY_RUBRIC = [
   "1: Read-only safe inspection (reading non-sensitive public files, directory listing, status checks)",
@@ -81,15 +90,40 @@ export class ToolGuardrailService {
   private client: ITypeSafeClient;
   private approvalLevel: number;
   private rubric: readonly string[];
+  private cache: LruCache<string, PluginHookBeforeToolCallResult | null>;
+  private cacheEnabled: boolean;
 
   constructor(
     client: ITypeSafeClient,
-    approvalLevel = 4,
+    optionsOrLevel: ToolGuardrailOptions | number = 4,
     rubric: readonly string[] = DEFAULT_TOOL_SAFETY_RUBRIC,
   ) {
     this.client = client;
-    this.approvalLevel = approvalLevel;
-    this.rubric = rubric;
+    if (typeof optionsOrLevel === "number") {
+      this.approvalLevel = optionsOrLevel;
+      this.rubric = rubric;
+      this.cacheEnabled = true;
+      this.cache = new LruCache({
+        maxEntries: 500,
+        defaultTtlMs: 15 * 60 * 1000,
+      });
+    } else {
+      this.approvalLevel = optionsOrLevel.approvalLevel ?? 4;
+      this.rubric = optionsOrLevel.rubric ?? DEFAULT_TOOL_SAFETY_RUBRIC;
+      this.cacheEnabled = optionsOrLevel.cacheEnabled !== false;
+      this.cache = new LruCache({
+        maxEntries: optionsOrLevel.cacheMaxEntries ?? 500,
+        defaultTtlMs: optionsOrLevel.cacheTtlMs ?? 15 * 60 * 1000,
+      });
+    }
+  }
+
+  clearCache(): void {
+    this.cache.clear();
+  }
+
+  getCacheStats(): CacheStats {
+    return this.cache.getStats();
   }
 
   /**
@@ -145,29 +179,42 @@ export class ToolGuardrailService {
       return null;
     }
 
+    // Check LRU decision cache
+    const cacheKey = `${event.toolName}:${computeDecisionHash(event.params || {})}`;
+    if (this.cacheEnabled) {
+      const cached = this.cache.get(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
     // Evaluate with Jev Score
     const scored = await this.client.score({
       state: this.formatEvaluationState(event.toolName, event.params),
       rubric: this.rubric,
     });
 
-    // If risk level is below approval threshold, permit direct execution
-    if (scored.level < this.approvalLevel) {
-      return null;
+    let result: PluginHookBeforeToolCallResult | null = null;
+    // If risk level meets or exceeds approval threshold, require interactive approval
+    if (scored.level >= this.approvalLevel) {
+      const isCritical = scored.level >= 5;
+      result = {
+        requireApproval: {
+          title: `TypeSafe Security Guardrail: ${event.toolName}`,
+          description: `Jev rated this action Risk Level ${scored.level}/5 (Confidence: ${Math.round(
+            scored.confidence * 100,
+          )}%).\nTarget/Params: ${JSON.stringify(event.params)}`,
+          severity: isCritical ? "critical" : "warning",
+          allowedDecisions: isCritical ? ["allow-once", "deny"] : ["allow-once", "allow-always", "deny"],
+        },
+      };
     }
 
-    // Require interactive approval from user
-    const isCritical = scored.level >= 5;
-    return {
-      requireApproval: {
-        title: `TypeSafe Security Guardrail: ${event.toolName}`,
-        description: `Jev rated this action Risk Level ${scored.level}/5 (Confidence: ${Math.round(
-          scored.confidence * 100,
-        )}%).\nTarget/Params: ${JSON.stringify(event.params)}`,
-        severity: isCritical ? "critical" : "warning",
-        allowedDecisions: isCritical ? ["allow-once", "deny"] : ["allow-once", "allow-always", "deny"],
-      },
-    };
+    if (this.cacheEnabled) {
+      this.cache.set(cacheKey, result);
+    }
+
+    return result;
   }
 
   /**

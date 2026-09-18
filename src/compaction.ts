@@ -31,8 +31,12 @@ export class CompactionCuratorService {
   /**
    * Prunes ephemeral, high-volume tool execution logs (e.g. passing test suites,
    * directory dumps) in-place before the transcript is fed into the generative summarizer.
+   * Processes candidate messages concurrently up to `concurrency` limit (default 5).
    */
-  async pruneTranscriptMessages(messages: unknown[]): Promise<PruneStats> {
+  async pruneTranscriptMessages(
+    messages: unknown[],
+    concurrency = 5,
+  ): Promise<PruneStats> {
     const stats: PruneStats = {
       originalMessageCount: messages.length,
       prunedOutputsCount: 0,
@@ -43,6 +47,8 @@ export class CompactionCuratorService {
       return stats;
     }
 
+    // Identify candidate messages
+    const candidates: Array<{ record: Record<string, unknown>; content: string }> = [];
     for (const item of messages) {
       if (!item || typeof item !== "object") continue;
 
@@ -51,34 +57,49 @@ export class CompactionCuratorService {
       const content = record.content;
 
       // Only inspect tool outputs or assistant function call outputs with substantial content
-      const isToolMessage = role === "tool" || Boolean(record.toolCallId) || Boolean(record.tool_call_id);
+      const isToolMessage =
+        role === "tool" || Boolean(record.toolCallId) || Boolean(record.tool_call_id);
       if (!isToolMessage || typeof content !== "string" || content.length < 400) {
         continue;
       }
 
-      // Check with Jev Choice whether this tool result is transient noise
-      try {
-        const decision = await this.client.choice({
-          state: `Tool name: ${record.name ?? record.toolName ?? "tool"}\nOutput snippet:\n${content.slice(
-            0,
-            800,
-          )}`,
-          options: ["ephemeral_log", "essential_state"],
-        });
+      candidates.push({ record, content });
+    }
 
-        if (decision.selected === "ephemeral_log" && decision.confidence >= 0.80) {
-          const originalLength = content.length;
-          const replacement = `[Omitted by TypeSafe Compaction Curator: ${
-            record.name ?? "tool"
-          } execution output (${Math.round(originalLength / 1024)}KB) evaluated as ephemeral]`;
+    if (candidates.length === 0) {
+      return stats;
+    }
 
-          record.content = replacement;
-          stats.prunedOutputsCount++;
-          stats.estimatedBytesSaved += originalLength - replacement.length;
-        }
-      } catch {
-        // Fail-safe: keep original content if Jev call fails or times out
-      }
+    // Process candidates in batches with concurrency limit
+    const effectiveConcurrency = Math.max(1, concurrency);
+    for (let i = 0; i < candidates.length; i += effectiveConcurrency) {
+      const batch = candidates.slice(i, i + effectiveConcurrency);
+      await Promise.all(
+        batch.map(async ({ record, content }) => {
+          try {
+            const decision = await this.client.choice({
+              state: `Tool name: ${record.name ?? record.toolName ?? "tool"}\nOutput snippet:\n${content.slice(
+                0,
+                800,
+              )}`,
+              options: ["ephemeral_log", "essential_state"],
+            });
+
+            if (decision.selected === "ephemeral_log" && decision.confidence >= 0.80) {
+              const originalLength = content.length;
+              const replacement = `[Omitted by TypeSafe Compaction Curator: ${
+                record.name ?? "tool"
+              } execution output (${Math.round(originalLength / 1024)}KB) evaluated as ephemeral]`;
+
+              record.content = replacement;
+              stats.prunedOutputsCount++;
+              stats.estimatedBytesSaved += originalLength - replacement.length;
+            }
+          } catch {
+            // Fail-safe: keep original content if Jev call fails, times out, or trips breaker
+          }
+        }),
+      );
     }
 
     return stats;

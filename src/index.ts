@@ -33,7 +33,10 @@ export function register(api: OpenClawPluginApi): void {
   const timeoutMs = pluginConfig.timeoutMs ?? 250;
   const safetyFailMode = pluginConfig.safetyFailMode ?? "secure";
   const configuredBotNames = pluginConfig.botNames ?? ["assistant", "bot", "claw", "openclaw"];
-  const client = new JevClientWrapper(apiKey, timeoutMs);
+  const client = new JevClientWrapper(apiKey, timeoutMs, {
+    failureThreshold: pluginConfig.circuitBreakerFailureThreshold,
+    resetTimeoutMs: pluginConfig.circuitBreakerResetTimeoutMs,
+  });
 
   const features = pluginConfig.features ?? {};
   const enableTriage = features.groupChatTriage !== false; // default true
@@ -46,6 +49,7 @@ export function register(api: OpenClawPluginApi): void {
   api.logger.info("[typesafe-ai] Initialized Jev System One decision engine.", {
     timeoutMs,
     safetyFailMode,
+    cacheEnabled: pluginConfig.cacheEnabled !== false,
     enableTriage,
     enableSafety,
     enableRouting,
@@ -81,10 +85,12 @@ export function register(api: OpenClawPluginApi): void {
 
   // 2. Pre-Flight Tool Safety Guardrail Hook
   if (enableSafety) {
-    const guardrailService = new ToolGuardrailService(
-      client,
-      pluginConfig.safetyApprovalLevel ?? 4,
-    );
+    const guardrailService = new ToolGuardrailService(client, {
+      approvalLevel: pluginConfig.safetyApprovalLevel ?? 4,
+      cacheEnabled: pluginConfig.cacheEnabled !== false,
+      cacheTtlMs: pluginConfig.cacheTtlMs,
+      cacheMaxEntries: pluginConfig.cacheMaxEntries,
+    });
 
     api.on("before_tool_call", async (event: BeforeToolCallEvent) => {
       try {
@@ -174,7 +180,11 @@ export function register(api: OpenClawPluginApi): void {
         async (event: PluginHookBeforeCompactionEvent, ctx?: PluginHookAgentContext) => {
           try {
             if (Array.isArray(event.messages) && event.messages.length > 0) {
-              const stats = await compactionService.pruneTranscriptMessages(event.messages);
+              const concurrency = pluginConfig.compactionConcurrency ?? 5;
+              const stats = await compactionService.pruneTranscriptMessages(
+                event.messages,
+                concurrency,
+              );
               if (stats.prunedOutputsCount > 0) {
                 api.logger.info(
                   `[typesafe-ai] Pre-compaction pruned ${stats.prunedOutputsCount} transient tool outputs, saving ~${Math.round(

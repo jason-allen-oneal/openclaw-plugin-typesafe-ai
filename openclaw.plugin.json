@@ -1,7 +1,7 @@
 {
   "id": "typesafe-ai",
   "name": "TypeSafe AI (Jev System One)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Sub-100ms typed System One decision engine for OpenClaw: group chat triage, tool safety guardrails, compaction curation, and model routing.",
   "categories": ["agent-orchestration"],
   "activation": {
@@ -29,6 +29,10 @@
     "safetyFailMode": {
       "label": "Safety Fallback Posture",
       "help": "Fail mode when Jev times out on dangerous tools. 'secure' requires interactive approval for critical tools (exec, rm, spawn); 'permissive' allows standard execution."
+    },
+    "cacheEnabled": {
+      "label": "Decision LRU Cache",
+      "help": "Enable in-memory LRU caching of deterministic tool safety decisions to skip remote calls for repeat commands."
     },
     "botNames": {
       "label": "Bot Name Aliases",
@@ -64,7 +68,7 @@
       "id": "general",
       "title": "General Settings",
       "order": 1,
-      "properties": ["apiKey", "timeoutMs"]
+      "properties": ["apiKey", "timeoutMs", "cacheEnabled"]
     },
     {
       "id": "features",
@@ -107,6 +111,36 @@
         "enum": ["secure", "permissive"],
         "default": "secure",
         "description": "Fallback posture when Jev check fails or times out on high-risk tools"
+      },
+      "cacheEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable in-memory LRU caching of deterministic decisions"
+      },
+      "cacheTtlMs": {
+        "type": "number",
+        "default": 900000,
+        "description": "LRU cache TTL in milliseconds (default: 15 minutes)"
+      },
+      "cacheMaxEntries": {
+        "type": "number",
+        "default": 500,
+        "description": "Maximum number of cached decision entries before LRU eviction"
+      },
+      "circuitBreakerFailureThreshold": {
+        "type": "number",
+        "default": 3,
+        "description": "Consecutive failure count before tripping circuit breaker to OPEN"
+      },
+      "circuitBreakerResetTimeoutMs": {
+        "type": "number",
+        "default": 30000,
+        "description": "Cooldown period in ms before attempting HALF_OPEN probe request"
+      },
+      "compactionConcurrency": {
+        "type": "number",
+        "default": 5,
+        "description": "Maximum concurrent tool output evaluations during pre-compaction pruning"
       },
       "botNames": {
         "type": "array",

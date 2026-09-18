@@ -8,6 +8,12 @@ export interface TypeSafePluginConfig {
   safetyApprovalLevel?: number;
   safetyFailMode?: "secure" | "permissive";
   botNames?: string[];
+  cacheEnabled?: boolean;
+  cacheTtlMs?: number;
+  cacheMaxEntries?: number;
+  circuitBreakerFailureThreshold?: number;
+  circuitBreakerResetTimeoutMs?: number;
+  compactionConcurrency?: number;
   features?: {
     groupChatTriage?: boolean;
     toolSafetyGate?: boolean;

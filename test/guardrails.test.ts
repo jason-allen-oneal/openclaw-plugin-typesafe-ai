@@ -127,4 +127,46 @@ describe("ToolGuardrailService", () => {
     expect(state).toContain("--- END UNTRUSTED TOOL PARAMETERS ---");
     expect(state).toContain("SECURITY DIRECTIVE:");
   });
+
+  it("caches deterministic tool safety decisions and skips remote call on repeat invocation", async () => {
+    const mockClient: ITypeSafeClient = {
+      noul: vi.fn(),
+      choice: vi.fn(),
+      score: vi.fn().mockResolvedValue({ level: 5, confidence: 0.99 }),
+    };
+
+    const service = new ToolGuardrailService(mockClient, { cacheEnabled: true });
+    const event: BeforeToolCallEvent = {
+      toolName: "exec",
+      params: { command: "git status" },
+    };
+
+    // First call: evaluates with mockClient.score
+    const result1 = await service.assessToolCall(event);
+    expect(result1).not.toBeNull();
+    expect(mockClient.score).toHaveBeenCalledTimes(1);
+    expect(service.getCacheStats().misses).toBe(1);
+    expect(service.getCacheStats().hits).toBe(0);
+
+    // Second call with same tool and params: served from cache in 0ms without hitting mockClient.score
+    const result2 = await service.assessToolCall(event);
+    expect(result2).toEqual(result1);
+    expect(mockClient.score).toHaveBeenCalledTimes(1); // Still 1!
+    expect(service.getCacheStats().hits).toBe(1);
+
+    // Third call with different params: cache miss, triggers mockClient.score
+    await service.assessToolCall({
+      toolName: "exec",
+      params: { command: "git diff" },
+    });
+    expect(mockClient.score).toHaveBeenCalledTimes(2);
+    expect(service.getCacheStats().misses).toBe(2);
+
+    // Clearing cache forces fresh evaluation
+    service.clearCache();
+    expect(service.getCacheStats().size).toBe(0);
+    await service.assessToolCall(event);
+    expect(mockClient.score).toHaveBeenCalledTimes(3);
+  });
 });
+

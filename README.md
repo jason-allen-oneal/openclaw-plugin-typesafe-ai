@@ -24,17 +24,19 @@ Modern agent workflows often suffer from the **"Heuristic vs. Expensive LLM"** d
 ## 🎯 Features
 
 * 🤫 **Intelligent Group Chat Triage (`Noul`)**: Evaluates inbound group messages in ~80ms. Casual chatter is suppressed immediately before context assembly or agent loops wake up.
-* 🛡️ **Autonomous Tool Blast Radius Guardrails (`Score`)**: Evaluates proposed tool execution parameters on a calibrated 1–5 risk scale. Harmless actions run instantly; destructive commands escalate for operator approval.
-* 🧹 **Pre-Compaction Tool Output Curation (`Choice` & `Noul`)**: Uses Jev to evaluate and prune bloated, transient tool outputs (test traces, terminal logs) *before* history reaches the LLM summarizer—slashing compaction input by ~75% and preventing mid-task amnesia.
+* 🛡️ **Autonomous Tool Blast Radius Guardrails (`Score`)**: Evaluates proposed tool execution parameters on a calibrated 1–5 risk scale. Harmless actions run instantly; destructive commands escalate for operator approval with fail-closed protection.
+* ⚡ **In-Memory LRU Decision Cache**: Deterministic SHA-256 fingerprinting caches tool safety ratings, delivering 0ms instant verdicts on repetitive commands (`git status`, `ls`, file reads).
+* 🧹 **Pre-Compaction Tool Output Curation (`Choice` & `Noul`)**: Concurrently prunes bloated, transient tool outputs (test traces, terminal logs) in parallel batches before history reaches the LLM summarizer—slashing compaction input by ~75% while preserving state.
+* 🔌 **Outage-Proof Circuit Breaker**: Consecutive network failures trip a circuit breaker to immediately fail fast, eliminating latency stalls during downstream provider interruptions.
 * 🔀 **Adaptive Model Tier Routing (`Choice`)**: Dynamically routes trivial queries to fast utility models (e.g. Claude 3.5 Haiku) and reserves frontier reasoning models for complex tasks.
 * 🛑 **Prompt Injection Screening (`Score`)**: Audits untrusted external web scraping and email payloads before feeding them to the primary agent loop.
-* 🔌 **Zero-Core Footprint & Graceful Fallback**: Strictly opt-in. If unconfigured or if network blips occur, OpenClaw transparently falls back to vanilla heuristic behavior with zero interruptions.
+* 🔒 **Zero-Core Footprint & Graceful Fallback**: Strictly opt-in. If unconfigured or if network blips occur, OpenClaw transparently falls back to safe behavior with zero interruptions.
 
 ---
 
 ## 📦 Installation
 
-### Option 1: Install via OpenClaw CLI (Recommended)
+### Option 1: Install via ClawHub / OpenClaw CLI (Recommended)
 ```bash
 openclaw plugins install openclaw-plugin-typesafe-ai
 ```
@@ -42,11 +44,11 @@ openclaw plugins install openclaw-plugin-typesafe-ai
 ### Option 2: Local Development Link
 Clone this repository and link it into your OpenClaw workspace:
 ```bash
-git clone https://github.com/your-org/openclaw-plugin-typesafe-ai.git
+git clone https://github.com/jason-allen-oneal/openclaw-plugin-typesafe-ai.git
 cd openclaw-plugin-typesafe-ai
-npm install
-npm run build
-npm link
+pnpm install
+pnpm run build
+pnpm link
 
 # Inside your OpenClaw workspace:
 openclaw plugins link openclaw-plugin-typesafe-ai
@@ -71,11 +73,16 @@ Or configure it in your `openclaw.json` (or Gateway settings):
         "config": {
           "apiKey": "${TYPESAFE_API_KEY}",
           "timeoutMs": 250,
+          "safetyFailMode": "secure",
+          "cacheEnabled": true,
           "triageThreshold": 0.75,
           "safetyApprovalLevel": 4,
+          "compactionConcurrency": 5,
           "features": {
             "groupChatTriage": true,
             "toolSafetyGate": true,
+            "compactionCuration": true,
+            "compactionFidelityAudit": true,
             "modelComplexityRouting": false,
             "promptInjectionAudit": false
           }
@@ -91,11 +98,21 @@ Or configure it in your `openclaw.json` (or Gateway settings):
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `apiKey` | `string` | `process.env.TYPESAFE_API_KEY` | TypeSafe AI API key. |
-| `timeoutMs` | `number` | `250` | Maximum ms to wait for a Jev decision before falling back to heuristics. |
+| `timeoutMs` | `number` | `250` | Maximum ms to wait for a Jev decision before falling back. |
+| `safetyFailMode` | `string` | `"secure"` | Safety fallback: `"secure"` fails closed (requires operator approval for dangerous tools on error); `"permissive"` allows normal execution. |
+| `cacheEnabled` | `boolean` | `true` | In-memory LRU decision cache for deterministic tool safety ratings. |
+| `cacheTtlMs` | `number` | `900000` (15m) | Time-to-live for cached decisions in milliseconds. |
+| `cacheMaxEntries` | `number` | `500` | Maximum cache capacity before LRU eviction. |
+| `circuitBreakerFailureThreshold` | `number` | `3` | Consecutive failures before tripping the circuit breaker to OPEN. |
+| `circuitBreakerResetTimeoutMs` | `number` | `30000` (30s) | Cooldown before attempting probe request in HALF_OPEN state. |
+| `compactionConcurrency` | `number` | `5` | Maximum concurrent tool evaluations during pre-compaction pruning. |
 | `triageThreshold` | `number` | `0.75` | Confidence threshold ($0.0 - 1.0$) to suppress group chatter. |
 | `safetyApprovalLevel`| `number` | `4` | Risk score ($1 - 5$) at or above which interactive operator approval is requested. |
+| `botNames` | `string[]` | `["assistant", "bot", ...]` | Bot aliases to always exempt from chatter suppression. |
 | `features.groupChatTriage` | `boolean` | `true` | Enable sub-100ms group chat triage via `Noul`. |
 | `features.toolSafetyGate` | `boolean` | `true` | Enable pre-flight blast radius tool checks via `Score`. |
+| `features.compactionCuration` | `boolean` | `true` | Enable pre-compaction tool output pruning via `Choice`. |
+| `features.compactionFidelityAudit` | `boolean` | `true` | Audit post-compaction session generation. |
 | `features.modelComplexityRouting` | `boolean` | `false` | Enable dynamic model tier selection via `Choice`. |
 | `features.promptInjectionAudit` | `boolean` | `false` | Enable prompt injection screening via `Score`. |
 
